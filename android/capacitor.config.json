@@ -1,0 +1,12 @@
+{
+  "appId": "com.sevenbesolution.gestionecole",
+  "appName": "Gestion Scolaire",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

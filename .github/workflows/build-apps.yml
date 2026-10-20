@@ -1,0 +1,94 @@
+name: Construire les applications (Windows, macOS, Android)
+
+# Se déclenche sur chaque push vers main, et peut aussi être lancé manuellement
+# depuis l'onglet "Actions" du dépôt GitHub ("Run workflow").
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch: {}
+
+jobs:
+  windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestionScolaire-Windows
+          path: electron/dist/*.exe
+
+  macos:
+    name: macOS (.dmg)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestionScolaire-macOS
+          path: |
+            electron/dist/*.dmg
+            electron/dist/*.zip
+
+  android:
+    name: Android (.apk)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Installer les dépendances Capacitor
+        run: npm install
+      - name: Ajouter la plateforme Android (si pas déjà commitée)
+        run: npx cap add android || npx cap sync android
+      - name: Rendre gradlew exécutable
+        run: chmod +x android/gradlew
+        continue-on-error: true
+      - name: Construire l'APK de débogage
+        working-directory: android/android
+        run: ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestionScolaire-Android
+          path: android/android/app/build/outputs/apk/debug/*.apk
+
+  release:
+    name: Publier la release (si tag v*)
+    needs: [ windows, macos, android ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/GestionScolaire-Windows/*
+            artifacts/GestionScolaire-macOS/*
+            artifacts/GestionScolaire-Android/*
