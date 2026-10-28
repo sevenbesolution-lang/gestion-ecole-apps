@@ -895,20 +895,24 @@ function deleteEtablissement(id){
   renderEtabScreen();
 }
 function essaiDateFin(etab){ return ymdLocal(new Date(new Date(etab.essaiDebut+'T00:00:00').getTime()+7*86400000)); }
+function etabBloque(etab){
+  if(!etab) return null;
+  if(etab.licence && etab.licenceExpire && etab.licenceExpire < ymdLocal(new Date())){
+    return "La licence de cet établissement a expiré le "+etab.licenceExpire+". Contactez Seven Be Solution Sarl pour la renouveler, ou saisissez un nouveau code de licence ci-dessous.";
+  }
+  if(etab.essai && !etab.licence){
+    const fin = essaiDateFin(etab);
+    if(fin < ymdLocal(new Date())){
+      return "La période d'essai gratuit de 7 jours de cet établissement est terminée depuis le "+fin+". L'accès aux données est bloqué. Contactez Seven Be Solution Sarl pour activer une licence, ou saisissez un code de licence ci-dessous.";
+    }
+  }
+  return null;
+}
 function selectEtablissement(id){
   const etab = ETAB_INDEX.find(e=>e.id===id);
   if(etab && !CONCEPTEUR_MODE){
-    if(etab.licence && etab.licenceExpire && etab.licenceExpire < ymdLocal(new Date())){
-      alert("La licence de cet établissement a expiré le "+etab.licenceExpire+". Contactez Seven Be Solution Sarl pour la renouveler.");
-      return;
-    }
-    if(etab.essai && !etab.licence){
-      const fin = essaiDateFin(etab);
-      if(fin < ymdLocal(new Date())){
-        alert("La période d'essai gratuit de 7 jours de cet établissement est terminée depuis le "+fin+". L'accès aux données est bloqué. Contactez Seven Be Solution Sarl pour activer une licence.");
-        return;
-      }
-    }
+    const motif = etabBloque(etab);
+    if(motif){ alert(motif); return false; }
   }
   CURRENT_ETAB_ID = id; sessionStorage.setItem('currentEtabId', id);
   loadEtabData(id);
@@ -919,11 +923,37 @@ function selectEtablissement(id){
     document.getElementById('loginOverlay').style.display='none';
     refreshAll(); goTo('admindash');
     showConcepteurBanner();
-    return;
+    return true;
   }
   document.getElementById('loginOverlay').style.display='flex';
   toggleLoginFields(); refreshAll();
   if(etab && etab.essai && !etab.licence) showEssaiBanner(etab);
+  return true;
+}
+function renouvelerLicenceEtab(id){
+  const etab = ETAB_INDEX.find(e=>e.id===id); if(!etab) return;
+  const code = (prompt("Nouveau code de licence pour « "+etab.nom+" » (fourni par Seven Be Solution Sarl) :")||'').trim().toUpperCase();
+  if(!code) return;
+  if(!licenceValideForNom(code, etab.nom)){ alert("Ce code de licence n'est pas valide pour cet établissement, ou il a expiré."); return; }
+  etab.licence = code; etab.licenceExpire = licenceExpiryOf(code); etab.essai = false;
+  saveEtabIndex();
+  alert("Licence renouvelée pour « "+etab.nom+" ». "+(etab.licenceExpire ? "Valide jusqu'au "+etab.licenceExpire+"." : "Validité illimitée."));
+  renderEtabScreen();
+}
+function etabStatutTxt(e){
+  if(e.licence){
+    if(e.licenceExpire){
+      const expire = e.licenceExpire < ymdLocal(new Date());
+      return (expire?'⛔ Licence expirée le ':'✅ Licence valide jusqu\'au ')+e.licenceExpire;
+    }
+    return '✅ Licence illimitée';
+  }
+  if(e.essai){
+    const fin = essaiDateFin(e);
+    const expire = fin < ymdLocal(new Date());
+    return (expire?'⛔ Essai terminé le ':'⏳ Essai gratuit jusqu\'au ')+fin;
+  }
+  return '';
 }
 function showEssaiBanner(etab){
   let b = document.getElementById('essaiBanner');
@@ -947,7 +977,7 @@ function renderEtabScreen(){
   document.getElementById('etabEssaiBtn').style.display = CONCEPTEUR_MODE ? 'none' : 'inline-block';
   if(!CONCEPTEUR_MODE){
     document.getElementById('etabSimpleSelect').innerHTML = ETAB_INDEX.length
-      ? '<p class="hint">Établissement(s) déjà activé(s) sur cet appareil :</p><div class="etab-grid">'+ETAB_INDEX.map(e=>`<div class="etab-tile" onclick="selectEtablissement('${e.id}')">${e.photo?`<img src="${e.photo}">`:'<div class="ph-placeholder">🏫</div>'}<div class="et-nom">${escHtml(e.nom)}</div></div>`).join('')+'</div>'
+      ? '<p class="hint">Établissement(s) déjà activé(s) sur cet appareil :</p><div class="etab-grid">'+ETAB_INDEX.map(e=>`<div class="etab-tile" onclick="selectEtablissement('${e.id}')">${e.photo?`<img src="${e.photo}">`:'<div class="ph-placeholder">🏫</div>'}<div class="et-nom">${escHtml(e.nom)}</div><div class="hint" style="font-size:.72rem;margin:2px 0">${etabStatutTxt(e)}</div><button class="btn secondary" style="font-size:.72rem;padding:3px 8px" onclick="event.stopPropagation();renouvelerLicenceEtab('${e.id}')">Renouveler la licence</button></div>`).join('')+'</div>'
       : '';
     return;
   }
@@ -1112,8 +1142,9 @@ function renderGenderDashboard(){
 }
 
 if(!CURRENT_ETAB_ID){
-  if(!CONCEPTEUR_MODE && ETAB_INDEX.length===1){ selectEtablissement(ETAB_INDEX[0].id); }
-  else { document.getElementById('etabOverlay').style.display='flex'; document.getElementById('loginOverlay').style.display='none'; renderEtabScreen(); }
+  let ouvert = false;
+  if(!CONCEPTEUR_MODE && ETAB_INDEX.length===1){ ouvert = selectEtablissement(ETAB_INDEX[0].id); }
+  if(!ouvert){ document.getElementById('etabOverlay').style.display='flex'; document.getElementById('loginOverlay').style.display='none'; renderEtabScreen(); }
 }
 
 // ---- Connexion / rôles ----
