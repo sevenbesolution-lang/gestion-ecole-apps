@@ -196,6 +196,7 @@ main .card .hint{color:#777}
           <div style="flex:1 1 100%"><label>Code de licence (fourni par Seven Be Solution)</label><input id="etab_licence" placeholder="ex: SBS-20271020-AB12CD34"></div>
         </div>
         <button class="btn" onclick="addEtablissement()">Créer et ouvrir</button>
+        <button class="btn secondary" id="etabEssaiBtn" onclick="addEtablissementEssai()" style="margin-top:8px">Démarrer un essai gratuit de 7 jours (sans licence)</button>
       </div>
       <p class="hint" style="margin-top:16px"><a href="#" onclick="toggleConcepteurBox();return false;">Accès concepteur</a></p>
       <div id="concepteurLoginBox" style="display:none">
@@ -244,11 +245,16 @@ main .card .hint{color:#777}
       <option value="enseignant">Enseignant</option>
       <option value="parent">Parent d'élève</option>
       <option value="fondateur">Fondateur (lecture seule)</option>
+      <option value="directeur">Directeur</option>
       <option value="admin">Administration</option>
     </select>
     <div id="loginAdminBox">
       <label>Mot de passe administrateur</label>
       <input id="loginPass" type="password">
+    </div>
+    <div id="loginDirecteurBox" style="display:none">
+      <label>Mot de passe directeur</label>
+      <input id="loginDirecteurPass" type="password">
     </div>
     <div id="loginTeacherBox" style="display:none">
       <label>Mon profil</label>
@@ -464,7 +470,7 @@ main .card .hint{color:#777}
   </div>
   </div>
   <h2>Enseignants enregistrés</h2>
-  <div class="card"><table><thead><tr><th></th><th>Nom</th><th>Contact</th><th>Niveau d'étude</th><th>Diplôme</th><th>Ancienneté</th><th>Classe(s) affectée(s)</th><th class="admin-only"></th></tr></thead><tbody id="teacherList"></tbody></table></div>
+  <div class="card"><table><thead><tr><th></th><th>Nom</th><th>Contact</th><th>Niveau d'étude</th><th>Diplôme</th><th>Ancienneté</th><th>Classe(s) affectée(s)</th><th>Accès</th><th class="admin-only"></th></tr></thead><tbody id="teacherList"></tbody></table></div>
 </section>
 
 <section id="cards">
@@ -671,6 +677,9 @@ main .card .hint{color:#777}
     <label style="margin-top:16px">Changer le mot de passe du compte Fondateur (lecture seule)</label>
     <input id="set_fondateur_pass" type="password" placeholder="Nouveau mot de passe">
     <button class="btn secondary" onclick="changeFondateurPassword()">Mettre à jour</button>
+    <label style="margin-top:16px">Changer le mot de passe du compte Directeur</label>
+    <input id="set_directeur_pass" type="password" placeholder="Nouveau mot de passe">
+    <button class="btn secondary" onclick="changeDirecteurPassword()">Mettre à jour</button>
   </div>
 </section>
 
@@ -714,7 +723,7 @@ main .card .hint{color:#777}
 
 <script>
 function freshEtabData(){
-  return {settings:{nom:'',adresse:'',telephone:'',logo:null,adminPassword:'',fondateurPassword:'',anneeScolaire:'',pays:'République du Cameroun',ministere:''},
+  return {settings:{nom:'',adresse:'',telephone:'',logo:null,adminPassword:'',directeurPassword:'',fondateurPassword:'',anneeScolaire:'',pays:'République du Cameroun',ministere:''},
     classes:[],students:[],subjects:[],grades:[],absences:[],schedule:[],payments:[],teachers:[],progression:[],discipline:[],fraisBareme:[],classeSuivante:{},gradeChangeLog:[],messages:[],archives:{},anciensEleves:[],presences:[],notifications:[]};
 }
 let ETAB_INDEX = JSON.parse(localStorage.getItem('etablissementsIndex')||'null');
@@ -827,10 +836,12 @@ function save(){ if(CURRENT_ETAB_ID) localStorage.setItem('ecoleData_'+CURRENT_E
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 let ROLE = sessionStorage.getItem('role') || null;
 let TEACHER_ID = sessionStorage.getItem('teacherId') || null;
+function isAdminLike(){ return ROLE==='admin' || ROLE==='directeur'; }
+function addMonthsStr(dateStr, n){ const d = dateStr? new Date(dateStr+'T00:00:00') : new Date(); d.setMonth(d.getMonth()+n); return ymdLocal(d); }
 const FOUNDER_TABS = ['admindash','students','teachers','schedule','attendance','messages'];
 const SEQ_MAP = {T1:[1,2],T2:[3,4],T3:[5,6]};
 function currentTeacher(){ return DATA.teachers.find(t=>t.id===TEACHER_ID); }
-function allowedClasses(){ return (ROLE==='admin'||ROLE==='fondateur') ? DATA.classes : (currentTeacher()?.classes || []); }
+function allowedClasses(){ return (isAdminLike()||ROLE==='fondateur') ? DATA.classes : (currentTeacher()?.classes || []); }
 
 // ---- Établissements ----
 const CATEGORIES_ETAB = ['Enseignement de Base','Enseignement Secondaire','Enseignement Supérieur','Autres'];
@@ -863,6 +874,19 @@ function addEtablissement(){
   };
   if(fileInput.files[0]){ const r=new FileReader(); r.onload=()=>{ entry.photo=r.result; finish(); }; r.readAsDataURL(fileInput.files[0]); } else finish();
 }
+function addEtablissementEssai(){
+  const nom = document.getElementById('etab_nom').value.trim();
+  if(!nom){ alert("Nom de l'établissement requis."); return; }
+  if(!confirm("Démarrer un essai gratuit de 7 jours pour « "+nom+" » ? Passé ce délai, l'accès à l'établissement et à ses données sera bloqué jusqu'à l'activation d'une licence.")) return;
+  const categorie = document.getElementById('etab_categorie').value;
+  const ville = document.getElementById('etab_ville').value.trim();
+  const id = 'etab_'+uid();
+  const entry = {id,nom,categorie,ville,lat:null,lng:null,photo:null,licence:null,licenceExpire:'',essai:true,essaiDebut:ymdLocal(new Date())};
+  ETAB_INDEX.push(entry); saveEtabIndex();
+  const d = freshEtabData(); d.settings.nom = nom;
+  localStorage.setItem('ecoleData_'+id, JSON.stringify(d));
+  selectEtablissement(id);
+}
 function deleteEtablissement(id){
   if(!CONCEPTEUR_MODE){ alert("Seul le concepteur de l'application peut supprimer un établissement."); return; }
   if(!confirm("Supprimer définitivement cet établissement et toutes ses données ?")) return;
@@ -870,11 +894,21 @@ function deleteEtablissement(id){
   localStorage.removeItem('ecoleData_'+id);
   renderEtabScreen();
 }
+function essaiDateFin(etab){ return ymdLocal(new Date(new Date(etab.essaiDebut+'T00:00:00').getTime()+7*86400000)); }
 function selectEtablissement(id){
   const etab = ETAB_INDEX.find(e=>e.id===id);
-  if(etab && !CONCEPTEUR_MODE && etab.licence && etab.licenceExpire && etab.licenceExpire < ymdLocal(new Date())){
-    alert("La licence de cet établissement a expiré le "+etab.licenceExpire+". Contactez Seven Be Solution Sarl pour la renouveler.");
-    return;
+  if(etab && !CONCEPTEUR_MODE){
+    if(etab.licence && etab.licenceExpire && etab.licenceExpire < ymdLocal(new Date())){
+      alert("La licence de cet établissement a expiré le "+etab.licenceExpire+". Contactez Seven Be Solution Sarl pour la renouveler.");
+      return;
+    }
+    if(etab.essai && !etab.licence){
+      const fin = essaiDateFin(etab);
+      if(fin < ymdLocal(new Date())){
+        alert("La période d'essai gratuit de 7 jours de cet établissement est terminée depuis le "+fin+". L'accès aux données est bloqué. Contactez Seven Be Solution Sarl pour activer une licence.");
+        return;
+      }
+    }
   }
   CURRENT_ETAB_ID = id; sessionStorage.setItem('currentEtabId', id);
   loadEtabData(id);
@@ -889,6 +923,17 @@ function selectEtablissement(id){
   }
   document.getElementById('loginOverlay').style.display='flex';
   toggleLoginFields(); refreshAll();
+  if(etab && etab.essai && !etab.licence) showEssaiBanner(etab);
+}
+function showEssaiBanner(etab){
+  let b = document.getElementById('essaiBanner');
+  if(!b){
+    b = document.createElement('div'); b.id='essaiBanner';
+    b.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#92400e;color:#fff;text-align:center;padding:6px;font-family:Arial,sans-serif;font-size:.8rem;z-index:200';
+    document.body.appendChild(b);
+  }
+  b.innerHTML = '⏳ Version d\'essai gratuit — expire le '+essaiDateFin(etab)+'. Contactez Seven Be Solution Sarl pour activer une licence.';
+  b.style.display='block';
 }
 function changeEtablissement(){
   sessionStorage.removeItem('currentEtabId'); sessionStorage.removeItem('role'); sessionStorage.removeItem('teacherId');
@@ -899,6 +944,7 @@ function renderEtabScreen(){
   document.getElementById('etabGateBox').style.display = CONCEPTEUR_MODE ? 'none' : 'block';
   document.getElementById('etabFullBox').style.display = CONCEPTEUR_MODE ? 'block' : 'none';
   document.getElementById('etabLicenceField').style.display = CONCEPTEUR_MODE ? 'none' : 'flex';
+  document.getElementById('etabEssaiBtn').style.display = CONCEPTEUR_MODE ? 'none' : 'inline-block';
   if(!CONCEPTEUR_MODE){
     document.getElementById('etabSimpleSelect').innerHTML = ETAB_INDEX.length
       ? '<p class="hint">Établissement(s) déjà activé(s) sur cet appareil :</p><div class="etab-grid">'+ETAB_INDEX.map(e=>`<div class="etab-tile" onclick="selectEtablissement('${e.id}')">${e.photo?`<img src="${e.photo}">`:'<div class="ph-placeholder">🏫</div>'}<div class="et-nom">${escHtml(e.nom)}</div></div>`).join('')+'</div>'
@@ -1081,6 +1127,7 @@ function toggleLoginFields(){
   document.getElementById('loginTeacherBox').style.display = role==='enseignant'?'block':'none';
   document.getElementById('loginParentBox').style.display = role==='parent'?'block':'none';
   document.getElementById('loginFondateurBox').style.display = role==='fondateur'?'block':'none';
+  document.getElementById('loginDirecteurBox').style.display = role==='directeur'?'block':'none';
   if(role==='enseignant') fillLoginTeacherSelect();
 }
 let PARENT_IDS = JSON.parse(sessionStorage.getItem('parentIds')||'null') || [];
@@ -1113,12 +1160,20 @@ function doLogin(){
       DATA.settings.fondateurPassword = pass; save();
     } else if(pass !== DATA.settings.fondateurPassword){ alert('Mot de passe incorrect.'); return; }
     ROLE='fondateur'; TEACHER_ID=null; sessionStorage.setItem('role','fondateur'); sessionStorage.removeItem('teacherId');
+  } else if(role==='directeur'){
+    const pass = document.getElementById('loginDirecteurPass').value;
+    if(!DATA.settings.directeurPassword){
+      if(!pass){ alert("Définissez un mot de passe pour créer l'accès directeur."); return; }
+      DATA.settings.directeurPassword = pass; save();
+    } else if(pass !== DATA.settings.directeurPassword){ alert('Mot de passe incorrect.'); return; }
+    ROLE='directeur'; TEACHER_ID=null; sessionStorage.setItem('role','directeur'); sessionStorage.removeItem('teacherId');
   } else {
     const ident = document.getElementById('loginTeacherSelect').value;
     const pass = document.getElementById('loginTeacherPass').value;
     const t = DATA.teachers.find(t=>t.identifiant===ident && t.motDePasse===pass);
     if(!ident){ alert("Aucun profil enseignant disponible. Contactez l'administration."); return; }
     if(!t){ alert("Mot de passe incorrect."); return; }
+    if(t.accesExpire && t.accesExpire < ymdLocal(new Date())){ alert("Votre accès enseignant a expiré le "+t.accesExpire+". Contactez l'administration pour le renouveler pour la nouvelle année scolaire."); return; }
     ROLE='enseignant'; TEACHER_ID=t.id; sessionStorage.setItem('role','enseignant'); sessionStorage.setItem('teacherId',t.id);
     if(t.mustChangePassword){
       let np='';
@@ -1151,9 +1206,9 @@ function resetParentAccount(studentId){
 }
 function logout(){ sessionStorage.removeItem('role'); sessionStorage.removeItem('teacherId'); sessionStorage.removeItem('parentIds'); location.reload(); }
 function applyRole(){
-  document.querySelectorAll('nav button[data-admin]').forEach(b=> b.style.display = ROLE==='admin' ? 'inline-block' : 'none');
+  document.querySelectorAll('nav button[data-admin]').forEach(b=> b.style.display = isAdminLike() ? 'inline-block' : 'none');
   document.querySelectorAll('nav button[data-teacher]').forEach(b=> b.style.display = ROLE==='enseignant' ? 'inline-block' : 'none');
-  document.querySelectorAll('.admin-only').forEach(el=> el.style.display = ROLE==='admin' ? '' : 'none');
+  document.querySelectorAll('.admin-only').forEach(el=> el.style.display = isAdminLike() ? '' : 'none');
   document.querySelectorAll('.teacher-only').forEach(el=> el.style.display = ROLE==='enseignant' ? '' : 'none');
   document.querySelectorAll('nav button').forEach(b=>{
     if(b.dataset.t==='parentspace') b.style.display = ROLE==='parent' ? 'inline-block' : 'none';
@@ -1163,10 +1218,11 @@ function applyRole(){
     document.querySelectorAll('nav button').forEach(b=> b.style.display = FOUNDER_TABS.includes(b.dataset.t) ? 'inline-block' : 'none');
   }
   if(ROLE==='admin') document.getElementById('whoRole').textContent = 'Administration';
+  else if(ROLE==='directeur') document.getElementById('whoRole').textContent = 'Direction';
   else if(ROLE==='parent') document.getElementById('whoRole').textContent = 'Parent d\'élève';
   else if(ROLE==='fondateur') document.getElementById('whoRole').textContent = 'Fondateur (lecture seule)';
   else { const t=currentTeacher(); document.getElementById('whoRole').textContent = t ? 'Enseignant — '+t.nom : 'Enseignant'; }
-  document.getElementById('heroSub').textContent = (ROLE==='admin'||ROLE==='fondateur') ? "Tableau de bord de l'établissement" : 'Vos classes : '+(allowedClasses().join(', ')||'aucune classe attribuée');
+  document.getElementById('heroSub').textContent = (isAdminLike()||ROLE==='fondateur') ? "Tableau de bord de l'établissement" : 'Vos classes : '+(allowedClasses().join(', ')||'aucune classe attribuée');
 }
 if(ROLE){ document.getElementById('loginOverlay').style.display='none'; }
 
@@ -1229,7 +1285,7 @@ function addTeacher(){
   if(!nom || !identifiant || !motDePasse){ alert('Nom, identifiant et mot de passe requis.'); return; }
   if(DATA.teachers.some(t=>t.identifiant===identifiant)){ alert('Identifiant déjà utilisé.'); return; }
   if(classes.length===0){ alert('Attribuez au moins une classe.'); return; }
-  const teacher = {id:uid(),nom,identifiant,motDePasse,contact,niveauEtude,diplome,anciennete,adresse,statutMatrimonial,classes,photo:null,mustChangePassword:true};
+  const teacher = {id:uid(),nom,identifiant,motDePasse,contact,niveauEtude,diplome,anciennete,adresse,statutMatrimonial,classes,photo:null,mustChangePassword:true,accesExpire:addMonthsStr('',9)};
   const finish=()=>{
     DATA.teachers.push(teacher); save();
     ['t_nom','t_id','t_pass','t_contact','t_niveau','t_diplome','t_anciennete','t_adresse'].forEach(id=>document.getElementById(id).value='');
@@ -1256,11 +1312,19 @@ function reassignTeacher(){
   save(); alert('Classes mises à jour pour '+t.nom+'.'); refreshAll();
 }
 function deleteTeacher(id){ if(!confirm('Supprimer cet enseignant ?')) return; DATA.teachers = DATA.teachers.filter(t=>t.id!==id); save(); refreshAll(); }
+function renouvelerAccesEnseignant(id){
+  const t = DATA.teachers.find(t=>t.id===id); if(!t) return;
+  t.accesExpire = addMonthsStr('',9); save(); refreshAll();
+  alert("Accès de "+t.nom+" renouvelé pour 9 mois, jusqu'au "+t.accesExpire+".");
+}
 function renderTeachers(){
   fillTeacherClassChecks();
-  document.getElementById('teacherList').innerHTML = DATA.teachers.map(t=>
-    `<tr style="cursor:pointer" onclick="viewCard('enseignant','${t.id}')"><td>${t.photo?`<img class="thumb" src="${t.photo}">`:''}</td><td>${t.nom}</td><td>${t.contact||''}</td><td>${t.niveauEtude||''}</td><td>${t.diplome||''}</td><td>${t.anciennete!=null?t.anciennete+' an(s)':''}</td><td>${t.classes.join(', ')}</td><td class="admin-only" onclick="event.stopPropagation()"><button class="btn secondary" onclick="resetTeacherPassword('${t.id}')">Réinit. mdp</button> <button class="btn danger" onclick="deleteTeacher('${t.id}')">Suppr.</button></td></tr>`
-  ).join('') || '<tr><td colspan="8" style="color:#888">Aucun enseignant.</td></tr>';
+  document.getElementById('teacherList').innerHTML = DATA.teachers.map(t=>{
+    const expire = t.accesExpire || '';
+    const expireSoon = expire && expire < addMonthsStr('',1);
+    const expireTxt = expire ? `<span style="color:${expireSoon?'#c0392b':'#555'}">${expire}</span>` : '<span style="color:#888">illimité</span>';
+    return `<tr style="cursor:pointer" onclick="viewCard('enseignant','${t.id}')"><td>${t.photo?`<img class="thumb" src="${t.photo}">`:''}</td><td>${t.nom}</td><td>${t.contact||''}</td><td>${t.niveauEtude||''}</td><td>${t.diplome||''}</td><td>${t.anciennete!=null?t.anciennete+' an(s)':''}</td><td>${t.classes.join(', ')}</td><td>Accès jusqu'au ${expireTxt}</td><td class="admin-only" onclick="event.stopPropagation()"><button class="btn secondary" onclick="renouvelerAccesEnseignant('${t.id}')">Renouveler (9 mois)</button> <button class="btn secondary" onclick="resetTeacherPassword('${t.id}')">Réinit. mdp</button> <button class="btn danger" onclick="deleteTeacher('${t.id}')">Suppr.</button></td></tr>`;
+  }).join('') || '<tr><td colspan="9" style="color:#888">Aucun enseignant.</td></tr>';
 }
 
 // ---- Élèves ----
@@ -1392,10 +1456,10 @@ function deleteStudent(id){
 function renderStudents(){
   const filterSel = document.getElementById('s_filter'); const cur = filterSel.value;
   const opts = allowedClasses();
-  const classOptions = ROLE==='admin' ? DATA.classes : opts;
+  const classOptions = isAdminLike() ? DATA.classes : opts;
   filterSel.innerHTML = '<option value="">— Sélectionner une classe —</option>'+classOptions.map(c=>`<option ${c===cur?'selected':''}>${c}</option>`).join('');
   const filter = filterSel.value;
-  const scope = DATA.students.filter(s=> ROLE==='admin' || opts.includes(s.classe));
+  const scope = DATA.students.filter(s=> isAdminLike() || opts.includes(s.classe));
   const list = scope.filter(s=> !filter || s.classe===filter );
   const rowHtml = s=>{
     const enRegle = s.fraisPayes && s.dossierComplet;
@@ -1418,7 +1482,7 @@ function renderStudents(){
     html = '<tr><td colspan="9" style="color:#888;font-family:Arial,sans-serif;padding:14px">Choisissez une classe ci-dessus pour afficher sa liste d\'élèves.</td></tr>';
   }
   document.getElementById('studentList').innerHTML = html;
-  document.querySelectorAll('.admin-only').forEach(el=> el.style.display = ROLE==='admin' ? '' : 'none');
+  document.querySelectorAll('.admin-only').forEach(el=> el.style.display = isAdminLike() ? '' : 'none');
 }
 
 // ---- Matières ----
@@ -1585,7 +1649,7 @@ function renderGradeEntry(){
   const students = DATA.students.filter(s=>s.classe===classe);
   document.getElementById('gradeEntryList').innerHTML = students.map(s=>{
     const g = DATA.grades.find(g=>g.studentId===s.id && g.subjectId===subjectId && g.seq===seq);
-    if(ROLE==='admin'){
+    if(isAdminLike()){
       return `<tr><td>${s.nom} ${s.prenom||''}</td><td>${g?g.note:'—'}</td><td>${g&&g.observation?g.observation:''}</td></tr>`;
     }
     return `<tr><td>${s.nom} ${s.prenom||''}</td><td><input class="note-input" data-sid="${s.id}" type="number" min="0" max="20" step="0.5" value="${g?g.note:''}"></td><td><input class="obs-input" data-sid="${s.id}" placeholder="observation (facultatif)" value="${g&&g.observation?g.observation:''}"></td></tr>`;
@@ -1657,7 +1721,7 @@ function saveAbsences(){
 // ---- Bulletins ----
 function fillBulletinSelect(){
   const cur = document.getElementById('b_eleve').value; const opts = allowedClasses();
-  const list = DATA.students.filter(s=> ROLE==='admin' || opts.includes(s.classe));
+  const list = DATA.students.filter(s=> isAdminLike() || opts.includes(s.classe));
   document.getElementById('b_eleve').innerHTML = list.map(s=>`<option value="${s.id}" ${s.id===cur?'selected':''}>${s.nom} ${s.prenom||''} — ${s.classe}</option>`).join('') || '<option value="">Aucun élève</option>';
 }
 function buildBulletinHTML(s, trim){
@@ -1999,7 +2063,7 @@ function renderSoldeParEleve(){
 function renderMessages(){
   const el = document.getElementById('messageList'); if(!el) return;
   const opts = allowedClasses();
-  const list = (DATA.messages||[]).filter(m=> ROLE==='admin'||ROLE==='fondateur' || opts.includes(m.classe)).sort((a,b)=>b.date.localeCompare(a.date));
+  const list = (DATA.messages||[]).filter(m=> isAdminLike()||ROLE==='fondateur' || opts.includes(m.classe)).sort((a,b)=>b.date.localeCompare(a.date));
   el.innerHTML = list.map(m=>`<tr><td>${m.date}</td><td>${m.studentNom}</td><td>${m.classe}</td><td>${m.texte}</td></tr>`).join('') || '<tr><td colspan="4" style="color:#888">Aucun message pour le moment.</td></tr>';
 }
 function renderDashGradeLog(){
@@ -2062,6 +2126,10 @@ function changeFondateurPassword(){
   const p = document.getElementById('set_fondateur_pass').value; if(!p){ alert('Saisissez un mot de passe.'); return; }
   DATA.settings.fondateurPassword = p; save(); document.getElementById('set_fondateur_pass').value=''; alert('Mot de passe mis à jour.');
 }
+function changeDirecteurPassword(){
+  const p = document.getElementById('set_directeur_pass').value; if(!p){ alert('Saisissez un mot de passe.'); return; }
+  DATA.settings.directeurPassword = p; save(); document.getElementById('set_directeur_pass').value=''; alert('Mot de passe mis à jour.');
+}
 function applyHeader(){
   document.getElementById('headerNom').textContent = DATA.settings.nom || 'Registre Scolaire';
   document.getElementById('heroNom').textContent = DATA.settings.nom ? 'Bienvenue — '+DATA.settings.nom : 'Bienvenue';
@@ -2088,7 +2156,7 @@ const QUICKLINKS = [
   {t:'settings',ic:'⚙️',label:'Réglages',admin:true},
 ];
 function renderQuicklinks(){
-  document.getElementById('quicklinks').innerHTML = QUICKLINKS.filter(q=>(!q.admin || ROLE==='admin') && (!q.teacher || ROLE==='enseignant') && (ROLE!=='fondateur' || FOUNDER_TABS.includes(q.t))).map(q=>`<button onclick="goTo('${q.t}')"><span class="ic">${q.ic}</span>${q.label}</button>`).join('');
+  document.getElementById('quicklinks').innerHTML = QUICKLINKS.filter(q=>(!q.admin || isAdminLike()) && (!q.teacher || ROLE==='enseignant') && (ROLE!=='fondateur' || FOUNDER_TABS.includes(q.t))).map(q=>`<button onclick="goTo('${q.t}')"><span class="ic">${q.ic}</span>${q.label}</button>`).join('');
 }
 function goTo(t){
   if(ROLE==='fondateur' && !FOUNDER_TABS.includes(t) && t!=='bulletins' && t!=='cards') t='admindash';
@@ -2099,14 +2167,14 @@ function goTo(t){
   refreshAll();
 }
 function renderGallery(){
-  const opts = allowedClasses(); const list = DATA.students.filter(s=> ROLE==='admin' || opts.includes(s.classe));
+  const opts = allowedClasses(); const list = DATA.students.filter(s=> isAdminLike() || opts.includes(s.classe));
   document.getElementById('gallery').innerHTML = list.slice(-24).reverse().map(s=>`<div class="pc" style="cursor:pointer" onclick="viewCard('eleve','${s.id}')"><img src="${s.photo||''}" onerror="this.style.opacity=.15"><div class="nm">${s.nom} ${s.prenom||''}</div><div class="cl">${s.classe}</div></div>`).join('') || '<p style="font-family:Arial,sans-serif;color:#888">Aucun élève à afficher.</p>';
 }
 
 // ---- Suivi des cours ----
 function fillTrackingSubjectSelect(){
   const opts = allowedClasses();
-  const subs = DATA.subjects.filter(m=> ROLE==='admin' || opts.includes(m.classe));
+  const subs = DATA.subjects.filter(m=> isAdminLike() || opts.includes(m.classe));
   const cur = document.getElementById('tr_matiere').value;
   document.getElementById('tr_matiere').innerHTML = subs.map(m=>`<option value="${m.id}" ${m.id===cur?'selected':''}>${m.nom} — ${m.classe}</option>`).join('') || '<option value="">Aucune matière</option>';
 }
@@ -2116,7 +2184,7 @@ function renderTracking(){
   const p = DATA.progression.find(p=>p.subjectId===subjectId);
   document.getElementById('tr_taux').value = p ? p.taux : '';
   const opts = allowedClasses();
-  const subs = DATA.subjects.filter(m=> ROLE==='admin' || opts.includes(m.classe));
+  const subs = DATA.subjects.filter(m=> isAdminLike() || opts.includes(m.classe));
   document.getElementById('trackingList').innerHTML = subs.map(m=>{
     const pr = DATA.progression.find(p=>p.subjectId===m.id);
     return `<tr><td>${m.classe}</td><td>${m.nom}</td><td>${pr?pr.taux+'%':'—'}</td><td>${pr?pr.dateMaj:'—'}</td></tr>`;
@@ -2135,7 +2203,7 @@ function saveTracking(){
 // ---- Cahier de discipline ----
 function fillDisciplineSelects(){
   const opts = allowedClasses();
-  const list = DATA.students.filter(s=> ROLE==='admin' || opts.includes(s.classe));
+  const list = DATA.students.filter(s=> isAdminLike() || opts.includes(s.classe));
   const opt = list.map(s=>`<option value="${s.id}">${s.nom} ${s.prenom||''} — ${s.classe}</option>`).join('') || '<option value="">Aucun élève</option>';
   const curA = document.getElementById('d_eleve').value, curB = document.getElementById('d_view_eleve').value;
   document.getElementById('d_eleve').innerHTML = opt;
@@ -2181,7 +2249,7 @@ function refreshAll(){
   renderAnneeScolaireCard(); renderCursus(); renderArchives();
   if(ROLE==='parent') renderParentSpace();
   const opts = allowedClasses();
-  const scope = DATA.students.filter(s=> ROLE==='admin' || opts.includes(s.classe));
+  const scope = DATA.students.filter(s=> isAdminLike() || opts.includes(s.classe));
   const ok = scope.filter(s=>s.fraisPayes&&s.dossierComplet).length;
   document.getElementById('statTotal').textContent = scope.length;
   document.getElementById('statOk').textContent = ok;
@@ -2203,7 +2271,7 @@ function importData(){
       const parsed = JSON.parse(r.result);
       if(!parsed.students||!parsed.subjects||!parsed.grades) throw 0;
       DATA = parsed;
-      DATA.settings = Object.assign({nom:'',adresse:'',telephone:'',logo:null,adminPassword:'',fondateurPassword:'',anneeScolaire:'',pays:'République du Cameroun',ministere:''}, DATA.settings||{});
+      DATA.settings = Object.assign({nom:'',adresse:'',telephone:'',logo:null,adminPassword:'',directeurPassword:'',fondateurPassword:'',anneeScolaire:'',pays:'République du Cameroun',ministere:''}, DATA.settings||{});
       ['schedule','payments','teachers','absences','classes','progression','discipline','fraisBareme','gradeChangeLog','messages','presences','notifications'].forEach(k=>{ if(!DATA[k]) DATA[k]=[]; });
       if(!DATA.classeSuivante) DATA.classeSuivante = {};
       if(!DATA.archives) DATA.archives = {};
